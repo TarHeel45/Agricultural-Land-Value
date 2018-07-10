@@ -10,7 +10,6 @@ library(dplyr)
 
 #import data ------------------------------------------------------------------------------
 fre <- read_lines(file = "/Users/John/Desktop/Projects/Agricultural Land Values/Combined Data - Farm Real Estate.csv") #import data file
-data <- read.csv(file = getURL("https://github.com/TarHeel45/Agricultural-Land-Value/Combined Data.csv"))
 
 fre <- as.data.frame(fre) #convert to dataframe
 
