@@ -64,4 +64,3 @@ Land_Clean <- fre3 %>%
 
 View(Land_Clean)
 write_csv(Land_Clean, "FRE_Values.csv")
-?write_csv
