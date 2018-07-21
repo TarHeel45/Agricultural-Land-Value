@@ -1,0 +1,183 @@
+---
+title: "Raw Data Wrangling and Cleaning"
+author: "John Mullan"
+date: "July 15, 2018"
+output: html_document
+---
+
+In this document, I will detail how I pulled together agricultural land value data from the NASS, wrangled and cleaned it, and produced a usable dataset.  
+
+### Import Libraries
+First, as always, we need to import the libraries that we will be using to wrangle and clean the data.
+```{r message=FALSE, warning=FALSE}
+library(tidyr)
+library(readr)
+library(stringr)
+library(data.table)
+library(formattable)
+library(dplyr)
+```
+
+### Import Data 
+To begin, I obtained the data from the NASS.  Unfortunately, the NASS split the data up into several CSVs, each of which has one additional year of data than the previous year's CSV.  To gather all of the relevant data into one CSV, I manually combined the data from all years into a single CSV and used that as my starting place for wrangling and cleaning the data in R.   
+I often feel that many people overlook the power of Excel as a starting point in exploring data.  I usually begin by viewing the data in a CSV, especially if the data are separated into many workbooks. I find that there are several simple Excel functions and macros that can be utilized to combine data before processing it in R. 
+
+Here, we import the raw data from Github and convert to a dataframe. There are three CSVs: overall farm real estate, cropland, and pastureland.  I will first clean the farm real estate data, then return to the cropland and pastureland. Finally, I will combine all of the data into a single dataframe.
+```{r message=FALSE, warning=FALSE}
+landValues <- read_lines(file = "https://raw.githubusercontent.com/TarHeel45/Agricultural-Land-Value/master/Combined%20Data%20-%20Farm%20Real%20Estate.csv")
+
+cropValues <- read_lines(file = "https://raw.githubusercontent.com/TarHeel45/Agricultural-Land-Value/master/Combined%20Data%20-%20Cropland.csv")
+
+pastureValues <- read_lines(file = "https://raw.githubusercontent.com/TarHeel45/Agricultural-Land-Value/master/Combined%20Data%20-%20Pasture.csv")
+
+landValues <- data.frame(landValues)
+cropValues <- data.frame(cropValues)
+pastureValues <- data.frame(pastureValues)
+```
+
+Let's inspect what the data look like
+```{r message=FALSE, warning=FALSE}
+head(landValues)
+tail(landValues)
+```
+Looking at the data, we are going to need to split the column up. Because we imported a CSV, this should be fairly straightforward using the *separate* function. Then, we can label the columns according to their content. The first two columns are unnecessary, then the columns contain the state and the years, followed by another unnecessary column (This column was the percent change in price from the original raw CSV to which I appended the other yearly data). 
+
+```{r message=FALSE, warning=FALSE}
+landValues2 <- separate(landValues, 1, paste0("X",1:25), sep = ",")
+
+landValues2 <- landValues2 %>%
+  setNames(c("X1", "X2", "State", paste(seq(1997, 2017, 1)), "Change")) %>%
+  select(-X1, -X2, -Change)
+```
+Let's take a look at our data now:
+```{r message=FALSE, warning=FALSE}
+head(landValues2, 10)
+```
+The data is still a bit messy. We can see that there are some entries in the State column that are in fact regions. We will deal with this farther down. We also see that there are some unnecessary rows at the beginning of the dataframe.  
+
+We want to keep only the rows that contain the land values for the states and regions, and then we want to remove blank rows:
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
+landValues3 <- landValues2[8:76,]
+rownames(landValues3) <- 1:nrow(landValues3) #renumber rows 
+landValues3 <- landValues3[!landValues3$State =="", ] #remove blank rows
+```
+Because we are dealing with three types of land values (farm real estate, cropland, and pasture), we need to create a new factor that indicates the category of the land.  
+```{r message=FALSE, warning=FALSE}
+landValues3$LandCategory <- "Farm Real Estate"
+rownames(landValues3) <- 1:nrow(landValues3)
+```
+Also, because the states are divided into regions, we should tidy the data further by adding a *Region* factor. Before we do this, however, we need to clean up the values of the State factor, as there are some slashes and other random characters in the values.
+```{r message=FALSE, warning=FALSE}
+landValues3$State <- landValues3$State %>%
+  str_replace_all("[/21]", "") %>%
+  str_replace_all("^ ", "") %>%
+  str_replace_all(" $", "")
+
+regions <- c("Northeast", "Lake States", "Corn Belt", "Northern Plains", "Appalachian", "Southeast", "Delta States", "Southern Plains", "Mountain", "Pacific", "United States")
+
+landValues3$Region <- NA
+
+for (i in seq(1,nrow(landValues3),1)) {
+  if (landValues3$State[i] %in% regions){
+    landValues3$Region[i] <- regions[regions == landValues3$State[i]]
+  }
+  else{
+    landValues3$Region[i] <- landValues3$Region[i-1]
+  }
+}
+```
+We have now added another variable, *Region*. We can go a step further by adding another variable, *Region or State*, which will indicate whether the entry is a region or state. 
+```{r message=FALSE, warning=FALSE}
+landValues3$`Region or State` <- "State"
+landValues3$`Region or State`[landValues3$State %in% regions] <- "Region"
+```
+One of the most crucial elements of tidy data is that each row represents one observation. As you can see, our data is not currently tidy because each row has multiple years of data. We need to fix this:
+```{r message=FALSE, warning=FALSE}
+landClean <- gather(landValues3, paste(seq(1997, 2017, 1)), key = "Year", value = "Acre Value")
+head(landClean, 20)
+```
+We now have a dataframe that is tidy and clean. Each row represents the value of farm real estate in one particular state/region in one particular year.  
+
+Now that we understand the process by which to clean these data, we can apply the same methods to the cropland and pasture datasets. 
+
+First, Cropland: 
+```{r message=FALSE, warning=FALSE}
+cropValues2 <- separate(cropValues, 1, paste0("X",1:25), sep = ",")
+
+cropValues2 <- cropValues2 %>%
+  setNames(c("X1", "X2", "State", paste(seq(1997, 2017, 1)), "Change")) %>%
+  select(-X1, -X2, -Change)
+
+cropValues3 <- cropValues2[8:71, ]
+rownames(cropValues3) <- 1:nrow(cropValues3) #renumber rows 
+cropValues3 <- cropValues3[!cropValues3$State =="", ]
+rownames(cropValues3) <- 1:nrow(cropValues3)
+
+cropValues3$LandCategory <- "Cropland"
+
+cropValues3$State <- cropValues3$State %>%
+  str_replace_all("[/21]", "") %>%
+  str_replace_all("^ ", "") %>%
+  str_replace_all(" $", "")
+
+for (i in seq(1,nrow(cropValues3),1)) {
+  if (cropValues3$State[i] %in% regions){
+    cropValues3$Region[i] <- regions[regions == cropValues3$State[i]]
+  }
+  else{
+    cropValues3$Region[i] <- cropValues3$Region[i-1]
+  }
+}
+
+cropValues3$`Region or State` <- "State"
+cropValues3$`Region or State`[cropValues3$State %in% regions] <- "Region"
+
+cropClean <- gather(cropValues3, paste(seq(1997, 2017, 1)), key = "Year", value = "Acre Value")
+```
+
+Next, Pasture: 
+```{r message=FALSE, warning=FALSE}
+pastureValues2 <- separate(pastureValues, 1, paste0("X",1:25), sep = ",")
+
+pastureValues2 <- pastureValues2 %>%
+  setNames(c("X1", "X2", "State", paste(seq(1997, 2017, 1)), "Change")) %>%
+  select(-X1, -X2, -Change)
+
+pastureValues3 <- pastureValues2[8:7, ]
+rownames(pastureValues3) <- 1:nrow(pastureValues3) #renumber rows 
+pastureValues3 <- pastureValues3[!pastureValues3$State =="", ]
+rownames(pastureValues3) <- 1:nrow(pastureValues3)
+
+pastureValues3$LandCategory <- "Pasture"
+
+pastureValues3$State <- pastureValues3$State %>%
+  str_replace_all("[/21]", "") %>%
+  str_replace_all("^ ", "") %>%
+  str_replace_all(" $", "")
+
+for (i in seq(1,nrow(pastureValues3),1)) {
+  if (pastureValues3$State[i] %in% regions){
+    pastureValues3$Region[i] <- regions[regions == pastureValues3$State[i]]
+  }
+  else{
+    pastureValues3$Region[i] <- pastureValues3$Region[i-1]
+  }
+}
+
+pastureValues3$`Region or State` <- "State"
+pastureValues3$`Region or State`[pastureValues3$State %in% regions] <- "Region"
+
+pastureClean <- gather(pastureValues3, paste(seq(1997, 2017, 1)), key = "Year", value = "Acre Value")
+```
+Now that we have three clean dataframes, all with the same variable and structure, we can create one final dataframe by appending the cropland and pasture dataframe to the farm real estate dataframe.
+
+```{r message=FALSE, warning=FALSE}
+FinalLandValues <- rbind(landClean, cropClean, pastureClean)
+```
+
+I think this little project was great for learning the following skills:
+* Data import and exploration
+* Cleaning messy data
+* Regular expressions
+* For loops 
+* General programming logic 
