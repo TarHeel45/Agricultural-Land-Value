@@ -20,4 +20,4 @@ I was inspired to gather this data to gain insight into how agricultural land va
 
 Thanks!
 
-Please feel free to view my kernel regarding the cleaning/tidying of the data!
+
